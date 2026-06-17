@@ -7,13 +7,15 @@ const router = Router();
 
 /**
  * POST /api/samsara/live-share
- * Body: { customerId, samsaraAssetId, busieVehicleId, expiresAtMs? }
+ * Body: { customerId, samsaraAssetId, busieVehicleId, expiresAtTime? }
  *
  * Generates a live sharing link via the Samsara REST API.
  * Used for non-routing customers who do not emit Route Stop events.
+ *
+ * expiresAtTime: optional RFC 3339 string (e.g. "2026-06-17T18:00:00Z")
  */
 router.post('/live-share', async (req, res) => {
-  const { customerId, samsaraAssetId, busieVehicleId, expiresAtMs } = req.body;
+  const { customerId, samsaraAssetId, busieVehicleId, expiresAtTime } = req.body;
 
   if (!customerId || !samsaraAssetId || !busieVehicleId) {
     return res.status(400).json({ error: 'customerId, samsaraAssetId, and busieVehicleId are required' });
@@ -24,7 +26,7 @@ router.post('/live-share', async (req, res) => {
       customerId,
       samsaraAssetId,
       busieVehicleId,
-      expiresAtMs,
+      expiresAtTime,
     });
     return res.json({ linkUrl });
   } catch (err) {

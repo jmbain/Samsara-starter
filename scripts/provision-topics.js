@@ -24,24 +24,24 @@ if (!customerId) {
 
 // All entity slugs from the Samsara Kafka connector
 const ENTITIES = [
-  // Priority 1
-  { slug: 'gps-locations',       retention: 7 },
-  { slug: 'engine-states',       retention: 7 },
-  { slug: 'odometer-obd',        retention: 7 },
-  { slug: 'odometer-gps',        retention: 7 },
-  { slug: 'route-events',        retention: 14 },
-  { slug: 'vehicle-events',      retention: 14 },
-  { slug: 'driver-events',       retention: 14 },
-  // Priority 2
-  { slug: 'engine-hours',        retention: 7 },
-  { slug: 'fuel-levels',         retention: 7 },
-  { slug: 'fault-codes',         retention: 7 },
-  { slug: 'geofence-events',     retention: 14 },
-  { slug: 'dvir-events',         retention: 14 },
-  { slug: 'safety-events',       retention: 14 },
-  // Priority 3
-  { slug: 'driver-hos-logs',     retention: 30 },
+  // Priority 1 — core telemetry + geofence events (required for status triggers and live map)
+  { slug: 'gps-locations',         retention: 7 },
+  { slug: 'engine-states',         retention: 7 },
+  { slug: 'odometer-obd',          retention: 7 },
+  { slug: 'odometer-gps',          retention: 7 },
+  { slug: 'geofence-events',       retention: 14 },
+  { slug: 'route-events',          retention: 14 },
+  { slug: 'vehicle-events',        retention: 14 },
+  { slug: 'driver-events',         retention: 14 },
   { slug: 'driver-vehicle-roster', retention: 14 },
+  // Priority 2 — supplemental telemetry
+  { slug: 'engine-hours',          retention: 7 },
+  { slug: 'fuel-levels',           retention: 7 },
+  { slug: 'fault-codes',           retention: 7 },
+  { slug: 'dvir-events',           retention: 14 },
+  { slug: 'safety-events',         retention: 14 },
+  // Priority 3
+  { slug: 'driver-hos-logs',       retention: 30 },
 ];
 
 const PARTITIONS = 6;

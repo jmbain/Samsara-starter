@@ -19,13 +19,15 @@ async function upsertFromKafka({ customerId, busieVehicleId, samsaraAssetId, sam
  * Used for non-routing customers who do not emit RouteStop events.
  * Calls POST https://api.samsara.com/live-shares
  */
-async function generateViaRestApi({ customerId, samsaraAssetId, busieVehicleId, expiresAtMs }) {
+async function generateViaRestApi({ customerId, samsaraAssetId, busieVehicleId, expiresAtTime }) {
   const apiToken = await secretsManager.getSamsaraToken(customerId);
 
+  // expiresAtTime must be an RFC 3339 string, e.g. "2026-06-17T18:00:00Z"
+  // Do NOT use expiresAtMs — Samsara API does not accept millisecond timestamps here.
   const body = {
     type: 'assetsLocation',
     assetIds: [samsaraAssetId],
-    ...(expiresAtMs ? { expiresAtMs } : {}),
+    ...(expiresAtTime ? { expiresAtTime } : {}),
   };
 
   const response = await axios.post(
