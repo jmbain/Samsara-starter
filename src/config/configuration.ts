@@ -3,10 +3,8 @@ export default () => ({
 
   kafka: {
     bootstrapServers: process.env.KAFKA_BOOTSTRAP_SERVERS,
-    // Phase 5 standard names — KAFKA_API_KEY/SECRET are the Phase 1 names kept for
-    // backward compat during migration; renamed to KAFKA_SASL_USERNAME/PASSWORD in Phase 5.
-    saslUsername: process.env.KAFKA_SASL_USERNAME ?? process.env.KAFKA_API_KEY,
-    saslPassword: process.env.KAFKA_SASL_PASSWORD ?? process.env.KAFKA_API_SECRET,
+    saslUsername: process.env.KAFKA_SASL_USERNAME,
+    saslPassword: process.env.KAFKA_SASL_PASSWORD,
     ssl: (process.env.KAFKA_SSL ?? 'true') === 'true',
     consumerGroupId: process.env.KAFKA_CONSUMER_GROUP_ID ?? 'samsara-consumer-dev',
     consumerGroupPrefix: process.env.KAFKA_CONSUMER_GROUP_PREFIX ?? 'samsara-consumer-',
