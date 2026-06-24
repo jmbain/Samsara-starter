@@ -11,6 +11,7 @@ import { SchemaRegistryModule } from './schema-registry/schema-registry.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { LiveShareModule } from './live-share/live-share.module';
 import { HealthModule } from './health/health.module';
+import { ConfluentModule } from './confluent/confluent.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { HealthModule } from './health/health.module';
     OnboardingModule,
     LiveShareModule,
     HealthModule,
+    ConfluentModule,
   ],
 })
 export class AppModule {}
