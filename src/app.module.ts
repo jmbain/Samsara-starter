@@ -7,6 +7,7 @@ import { SecretsModule } from './secrets/secrets.module';
 import { VehicleMapModule } from './vehicle-map/vehicle-map.module';
 import { ConsumerModule } from './consumer/consumer.module';
 import { KafkaModule } from './kafka/kafka.module';
+import { SchemaRegistryModule } from './schema-registry/schema-registry.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { LiveShareModule } from './live-share/live-share.module';
 import { HealthModule } from './health/health.module';
@@ -19,6 +20,7 @@ import { HealthModule } from './health/health.module';
     SecretsModule,
     VehicleMapModule,
     ConsumerModule,
+    SchemaRegistryModule,
     KafkaModule,
     OnboardingModule,
     LiveShareModule,

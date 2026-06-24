@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerService } from '../consumer/consumer.service';
 import { LoggerService } from '../logger/logger.service';
+import { SchemaRegistryService } from '../schema-registry/schema-registry.service';
 
 /**
  * Manages the Kafka consumer lifecycle within the NestJS application.
@@ -30,6 +31,7 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
     private readonly configService: ConfigService,
     private readonly consumerService: ConsumerService,
     private readonly logger: LoggerService,
+    private readonly schemaRegistry: SchemaRegistryService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -92,16 +94,20 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
       eachMessage: async ({ topic, partition, message }: KafkaJS.EachMessagePayload) => {
         this.lastMessageAt = new Date();
 
-        let payload: unknown;
-        try {
-          // Phase 3: raw JSON parse. Phase 4 replaces with Schema Registry deserialization.
-          payload = JSON.parse(message.value?.toString() ?? 'null');
-        } catch {
-          this.logger.errorMeta(
+        if (!message.value) {
+          this.logger.warnMeta(
             { topic, partition, offset: message.offset },
-            'Failed to parse message value as JSON',
+            'Received message with null value — skipping',
             KafkaService.name,
           );
+          return;
+        }
+
+        // Deserialize Avro payload via Schema Registry before routing.
+        // SchemaRegistryService handles schema lookup, caching, and error logging.
+        // A null return means deserialization failed — skip routing.
+        const payload = await this.schemaRegistry.deserialize(topic, message.value);
+        if (payload === null) {
           return;
         }
 
