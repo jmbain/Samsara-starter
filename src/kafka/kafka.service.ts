@@ -4,27 +4,25 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Kafka, Consumer, logLevel } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { ConsumerService } from '../consumer/consumer.service';
 import { LoggerService } from '../logger/logger.service';
 
 /**
  * Manages the Kafka consumer lifecycle within the NestJS application.
  *
- * NOTE: This module uses kafkajs as a temporary implementation for Phase 1.
- * It will be replaced with @confluentinc/kafka-javascript in Phase 3, which:
- *   - Uses Confluent's native librdkafka client (org standard, matches RMS)
- *   - Requires switching from regex topic subscription to explicit topic enumeration
- *     (Confluent client does not support regex patterns)
- *   - Changes the consumer API from async iterator to poll-based callback style
+ * Uses the KafkaJS compatibility layer from @confluentinc/kafka-javascript,
+ * which provides the same async/await API as kafkajs but backed by librdkafka.
+ * This is the org standard (matches RMS).
  *
- * TODO (Phase 3): Replace kafkajs with @confluentinc/kafka-javascript
- * TODO (Phase 3): Implement startupTopicDiscovery() to enumerate samsara.* topics
- *                 from cluster metadata rather than relying on regex subscription
+ * Key difference from kafkajs: the Confluent client does NOT support regex topic
+ * subscription. startupTopicDiscovery() uses the Admin API at boot to enumerate
+ * all samsara.* topics from cluster metadata and subscribes explicitly.
  */
 @Injectable()
 export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdown {
-  private consumer: Consumer;
+  private consumer: KafkaJS.Consumer | null = null;
+  private admin: KafkaJS.Admin | null = null;
   private lastMessageAt: Date | null = null;
   private livenessTimer: NodeJS.Timeout | null = null;
 
@@ -39,7 +37,8 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
     const saslUsername = this.configService.get<string>('kafka.saslUsername');
     const saslPassword = this.configService.get<string>('kafka.saslPassword');
     const ssl = this.configService.get<boolean>('kafka.ssl') ?? true;
-    const groupId = this.configService.get<string>('kafka.consumerGroupId') ?? 'samsara-consumer-dev';
+    const groupId =
+      this.configService.get<string>('kafka.consumerGroupId') ?? 'samsara-consumer-dev';
 
     if (!bootstrapServers || !saslUsername || !saslPassword) {
       this.logger.warn(
@@ -49,37 +48,60 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
       return;
     }
 
-    const kafka = new Kafka({
-      clientId: 'busie-samsara-consumer',
-      brokers: bootstrapServers.split(','),
-      ssl,
-      sasl: { mechanism: 'plain', username: saslUsername, password: saslPassword },
-      logLevel: logLevel.WARN,
+    const sasl: KafkaJS.SASLOptions | undefined = ssl
+      ? { mechanism: 'plain', username: saslUsername, password: saslPassword }
+      : undefined;
+
+    const kafka = new KafkaJS.Kafka({
+      kafkaJS: {
+        brokers: bootstrapServers.split(','),
+        ssl,
+        sasl,
+        clientId: groupId,
+      },
     });
 
-    this.consumer = kafka.consumer({ groupId });
+    // Discover all samsara.* topics from cluster metadata before subscribing.
+    // The Confluent client does not support regex subscription patterns, so we
+    // enumerate topics explicitly at startup. New customers added after service
+    // start require a redeploy (or a future hot-reload implementation).
+    const samsaraTopics = await this.startupTopicDiscovery(kafka);
+
+    if (samsaraTopics.length === 0) {
+      this.logger.warn(
+        'No samsara.* topics found in cluster metadata — consumer will not subscribe. ' +
+          'Ensure topics have been provisioned via Terraform before starting.',
+        KafkaService.name,
+      );
+    }
+
+    this.consumer = kafka.consumer({ kafkaJS: { groupId } });
     await this.consumer.connect();
     this.logger.log('Kafka consumer connected', KafkaService.name);
 
-    // Subscribe to all samsara.* topics via regex pattern (kafkajs supports this)
-    // NOTE: Phase 3 replaces this with explicit topic enumeration via cluster metadata
-    await this.consumer.subscribe({ topics: /^samsara\..*/, fromBeginning: false });
+    for (const topic of samsaraTopics) {
+      await this.consumer.subscribe({ topic });
+    }
+
+    this.logger.log(
+      `Kafka consumer subscribed to ${samsaraTopics.length} topics`,
+      KafkaService.name,
+    );
 
     await this.consumer.run({
-      eachMessage: async ({ topic, partition, message }) => {
+      eachMessage: async ({ topic, partition, message }: KafkaJS.EachMessagePayload) => {
         this.lastMessageAt = new Date();
 
         let payload: unknown;
         try {
-          // Phase 1: raw JSON parse. Phase 4 replaces with Schema Registry deserialization.
+          // Phase 3: raw JSON parse. Phase 4 replaces with Schema Registry deserialization.
           payload = JSON.parse(message.value?.toString() ?? 'null');
         } catch {
           this.logger.errorMeta(
             { topic, partition, offset: message.offset },
-            'Failed to parse message — routing to DLQ',
+            'Failed to parse message value as JSON',
             KafkaService.name,
           );
-          // TODO (Phase 3+): produce to samsara.{customerId}.dlq
           return;
         }
 
@@ -88,10 +110,9 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
         } catch (err) {
           this.logger.errorMeta(
             { topic, partition, offset: message.offset, err },
-            'Handler error — routing to DLQ',
+            'Handler threw an error',
             KafkaService.name,
           );
-          // TODO (Phase 3+): produce to samsara.{customerId}.dlq
         }
       },
     });
@@ -103,6 +124,9 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
   async onApplicationShutdown(signal?: string): Promise<void> {
     this.logger.log(`Shutting down Kafka consumer (signal: ${signal ?? 'none'})`, KafkaService.name);
     if (this.livenessTimer) clearInterval(this.livenessTimer);
+    if (this.admin) {
+      await this.admin.disconnect();
+    }
     if (this.consumer) {
       await this.consumer.disconnect();
       this.logger.log('Kafka consumer disconnected', KafkaService.name);
@@ -115,9 +139,41 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
   }
 
   /**
-   * Logs a warning when no messages have been received for an extended period.
-   * The kafkajs idle-disconnect bug (#1725) silently stops consumption after ~10 min;
-   * this monitor surfaces that condition. Phase 3 (Confluent client) eliminates the bug.
+   * Uses the Admin API to list all topics in the cluster and return those
+   * matching the samsara.* pattern. Called once at application bootstrap.
+   *
+   * The Confluent client (unlike kafkajs) does not support regex subscription,
+   * so explicit topic enumeration is required.
+   */
+  private async startupTopicDiscovery(kafka: KafkaJS.Kafka): Promise<string[]> {
+    this.admin = kafka.admin();
+    await this.admin.connect();
+
+    let allTopics: string[] = [];
+    try {
+      allTopics = await this.admin.listTopics();
+    } catch (err) {
+      this.logger.errorMeta(
+        { err },
+        'Failed to list topics from cluster metadata — proceeding with empty topic list',
+        KafkaService.name,
+      );
+    }
+
+    const samsaraTopics = allTopics.filter((t) => /^samsara\./.test(t));
+
+    this.logger.log(
+      `Topic discovery complete: ${samsaraTopics.length} samsara.* topics found`,
+      KafkaService.name,
+    );
+
+    return samsaraTopics;
+  }
+
+  /**
+   * Monitors consumer liveness and logs a warning when no messages have been
+   * received for an extended period. Useful for surfacing stalled consumers
+   * or misconfigured topic subscriptions.
    */
   private startLivenessMonitor(): void {
     const WARN_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
@@ -129,7 +185,7 @@ export class KafkaService implements OnApplicationBootstrap, OnApplicationShutdo
       if (idleMs > WARN_THRESHOLD_MS) {
         this.logger.warnMeta(
           { idleMinutes: Math.round(idleMs / 60000) },
-          'Kafka consumer has been idle — possible silent disconnect (kafkajs bug #1725). Restart if no messages expected.',
+          'Kafka consumer has been idle — verify topic subscription and cluster connectivity.',
           KafkaService.name,
         );
       }
