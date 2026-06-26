@@ -140,18 +140,18 @@ export class ConfluentService {
     );
 
     // Shared Busie consumer: read access on this customer's topic prefix
-    await this.assignRbacRoleBinding(
-      `User:${this.consumerSaId}`,
-      'DeveloperRead',
-      this.buildTopicCrn(cluster.clusterId, `samsara.${customerId}.*`),
-    );
+    // await this.assignRbacRoleBinding(
+    //   `User:${this.consumerSaId}`,
+    //   'DeveloperRead',
+    //   this.buildTopicCrn(cluster.clusterId, `samsara.${customerId}.*`),
+    // );
 
     // Shared Busie consumer: read access on the shared consumer group (idempotent across customers)
-    await this.assignRbacRoleBinding(
-      `User:${this.consumerSaId}`,
-      'DeveloperRead',
-      this.buildGroupCrn(cluster.clusterId, this.consumerGroupId),
-    );
+    // await this.assignRbacRoleBinding(
+    //   `User:${this.consumerSaId}`,
+    //   'DeveloperRead',
+    //   this.buildGroupCrn(cluster.clusterId, this.consumerGroupId),
+    // );
 
     this.logger.log(`Provisioning complete for customer ${customerId}`, ConfluentService.name);
 
@@ -392,13 +392,13 @@ export class ConfluentService {
    * Format: crn://confluent.cloud/organization={orgId}/environment={envId}
    *         /cloud-cluster={clusterId}/kafka={clusterId}/group={groupId}
    */
-  private buildGroupCrn(clusterId: string, groupId: string): string {
-    return (
-      `crn://confluent.cloud/organization=${this.orgId}` +
-      `/environment=${this.envId}` +
-      `/cloud-cluster=${clusterId}` +
-      `/kafka=${clusterId}` +
-      `/group=${groupId}`
-    );
-  }
+  // private buildGroupCrn(clusterId: string, groupId: string): string {
+  //   return (
+  //     `crn://confluent.cloud/organization=${this.orgId}` +
+  //     `/environment=${this.envId}` +
+  //     `/cloud-cluster=${clusterId}` +
+  //     `/kafka=${clusterId}` +
+  //     `/group=${groupId}`
+  //   );
+  // }
 }
